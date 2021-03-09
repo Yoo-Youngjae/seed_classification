@@ -12,25 +12,56 @@ from torchvision import transforms, datasets, models
 from torch.utils.data import DataLoader, Dataset
 import pandas as pd
 from sklearn.model_selection import train_test_split
+from PIL import Image
+import numpy as np
+from tqdm import tqdm
 
 USE_CUDA = torch.cuda.is_available()
 DEVICE = torch.device("cuda" if USE_CUDA else "cpu")
-csv_file_name = 'data/example.csv'
+csv_file_name = 'data/dataset.csv'
 
 # ## 하이퍼파라미터
 
-EPOCHS = 300
-BATCH_SIZE = 128
+EPOCHS = 40
+BATCH_SIZE = 32
+image_size = (224, 224, 3)
 
 
 class SeedDataset(Dataset):
-    def __init__(self, dataframe):
-        self.datafram = dataframe
+    def __init__(self, dataframe, root='data/img'):
+        super(SeedDataset, self).__init__()
+        self.dataframe = dataframe
+        self.root = root
+        self.compose = transforms.Compose([transforms.Resize((224, 224))])
 
-        def __len__(self):
-            return len(self.dataframe)
+    def __len__(self):
+        return len(self.dataframe)
 
-        def __getitem__(self, idx):
+    def __getitem__(self, i):
+        file_name, label = self.dataframe.loc[i]['name'], self.dataframe.loc[i]['label']
+        img_dir = self.root + file_name +'.JPG'
+        r_im = Image.open(img_dir)
+        r_im = self.compose(r_im)
+        r_im = np.array(r_im)
+        data = torch.FloatTensor(r_im)
+        return data, label
+
+    def get_sample(self, size):
+        file_names, labels = self.dataframe.loc[0:size-1]['name'], self.dataframe.loc[0:4]['label']
+        img_dir = self.root + file_names[0] +'.JPG'
+        r_im = Image.open(img_dir)
+        r_im = self.compose(r_im)
+        data = [np.array(r_im)]
+
+        for file_name in file_names[1:]:
+            img_dir = self.root + file_name +'.JPG'
+            r_im = Image.open(img_dir)
+            r_im = self.compose(r_im)
+            r_im = np.array(r_im)
+            data = np.concatenate((data, [r_im]), axis=0)
+
+        data = torch.FloatTensor(data)
+        return data, torch.tensor(labels.values.astype(np.float32))
 
 
 def get_data(file_name):
@@ -42,16 +73,17 @@ def get_data(file_name):
 
 # ## 데이터셋 불러오기
 
+trainset, testset = get_data(csv_file_name)
+
+trainset = SeedDataset(trainset, root='data/img/')
+testset = SeedDataset(testset, root='data/img/')
+
 train_loader = torch.utils.data.DataLoader(
-    ,
+    trainset,
     batch_size=BATCH_SIZE, shuffle=True)
+
 test_loader = torch.utils.data.DataLoader(
-    datasets.CIFAR10('./.data',
-                     train=False,
-                     transform=transforms.Compose([
-                         transforms.ToTensor(),
-                         transforms.Normalize((0.5, 0.5, 0.5),
-                                              (0.5, 0.5, 0.5))])),
+    testset,
     batch_size=BATCH_SIZE, shuffle=True)
 
 
@@ -84,7 +116,7 @@ class BasicBlock(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, num_classes=10):
+    def __init__(self, num_classes=8):
         super(ResNet, self).__init__()
         self.in_planes = 16
 
@@ -94,7 +126,7 @@ class ResNet(nn.Module):
         self.layer1 = self._make_layer(16, 2, stride=1)
         self.layer2 = self._make_layer(32, 2, stride=2)
         self.layer3 = self._make_layer(64, 2, stride=2)
-        self.linear = nn.Linear(64, num_classes)
+        self.linear = nn.Linear(3136, num_classes) # 64
 
     def _make_layer(self, planes, num_blocks, stride):
         strides = [stride] + [1] * (num_blocks - 1)
@@ -110,7 +142,7 @@ class ResNet(nn.Module):
         out = self.layer2(out)
         out = self.layer3(out)
         out = F.avg_pool2d(out, 8)
-        out = out.view(out.size(0), -1)
+        out = out.reshape(out.shape[0], -1)
         out = self.linear(out)
         return out
 
@@ -129,14 +161,21 @@ print(model)
 
 def train(model, train_loader, optimizer, epoch):
     model.train()
-    for batch_idx, (data, target) in enumerate(train_loader):
+    idx = 0
+    for data, target in tqdm(train_loader):
+        data = np.array(data) / 255.0
+        data = data.transpose((0, 3, 1, 2))
+        data = torch.FloatTensor(data).to(DEVICE)
+        target = target - 1
+
         data, target = data.to(DEVICE), target.to(DEVICE)
         optimizer.zero_grad()
         output = model(data)
         loss = F.cross_entropy(output, target)
         loss.backward()
         optimizer.step()
-
+        if idx %10 == 0:
+            print('loss',loss.item())
 
 # ## 테스트하기
 
@@ -145,7 +184,12 @@ def evaluate(model, test_loader):
     test_loss = 0
     correct = 0
     with torch.no_grad():
-        for data, target in test_loader:
+        for data, target in tqdm(test_loader):
+            data = np.array(data) / 255.0
+            data = data.transpose((0, 3, 1, 2))
+            data = torch.FloatTensor(data).to(DEVICE)
+            target = target - 1
+
             data, target = data.to(DEVICE), target.to(DEVICE)
             output = model(data)
 

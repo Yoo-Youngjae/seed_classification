@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from torch.utils.data import DataLoader, Dataset
+from torchvision import models, transforms
 from PIL import Image
 from tqdm import tqdm
 
@@ -21,17 +22,20 @@ from tqdm import tqdm
 EPOCH = 1
 BATCH_SIZE = 64
 dimension = 3
-image_size = (28, 28, 3)
+image_size = (224, 224, 3)
+feature_size = 1000
 
 USE_CUDA = torch.cuda.is_available()
 DEVICE = torch.device("cuda" if USE_CUDA else "cpu")
 print("Using Device:", DEVICE)
+# csv_file_name = 'data/example.csv'
 csv_file_name = 'data/dataset.csv'
-
 class SeedDataset(Dataset):
     def __init__(self, dataframe, root='data/img'):
+        super(SeedDataset, self).__init__()
         self.dataframe = dataframe
         self.root = root
+        self.compose = transforms.Compose([transforms.Resize((224, 224))])
 
     def __len__(self):
         return len(self.dataframe)
@@ -39,7 +43,8 @@ class SeedDataset(Dataset):
     def __getitem__(self, i):
         file_name, label = self.dataframe.loc[i]['name'], self.dataframe.loc[i]['label']
         img_dir = self.root + file_name +'.JPG'
-        r_im = Image.open(img_dir).resize((image_size[0], image_size[1]))
+        r_im = Image.open(img_dir)
+        r_im = self.compose(r_im)
         r_im = np.array(r_im)
         data = torch.FloatTensor(r_im)
         return data, label
@@ -47,17 +52,19 @@ class SeedDataset(Dataset):
     def get_sample(self, size):
         file_names, labels = self.dataframe.loc[0:size-1]['name'], self.dataframe.loc[0:4]['label']
         img_dir = self.root + file_names[0] +'.JPG'
-        r_im = Image.open(img_dir).resize((image_size[0], image_size[1]))
+        r_im = Image.open(img_dir)
+        r_im = self.compose(r_im)
         data = [np.array(r_im)]
 
         for file_name in file_names[1:]:
             img_dir = self.root + file_name +'.JPG'
-            r_im = Image.open(img_dir).resize((image_size[0], image_size[1]))
+            r_im = Image.open(img_dir)
+            r_im = self.compose(r_im)
             r_im = np.array(r_im)
             data = np.concatenate((data, [r_im]), axis=0)
 
         data = torch.FloatTensor(data)
-        return data, labels
+        return data, torch.tensor(labels.values.astype(np.float32))
 
 
 
@@ -80,7 +87,7 @@ class Autoencoder(nn.Module):
         global dimension
 
         self.encoder = nn.Sequential(
-            nn.Linear(image_size[0]*image_size[1]*image_size[2], 128),
+            nn.Linear(feature_size, 128),
             nn.ReLU(),
             nn.Linear(128, 64),
             nn.ReLU(),
@@ -95,7 +102,7 @@ class Autoencoder(nn.Module):
             nn.ReLU(),
             nn.Linear(64, 128),
             nn.ReLU(),
-            nn.Linear(128, image_size[0]*image_size[1]*image_size[2]),
+            nn.Linear(128, feature_size),
             nn.Sigmoid(),       # 픽셀당 0과 1 사이로 값을 출력합니다
         )
 
@@ -110,30 +117,30 @@ optimizer = torch.optim.Adam(autoencoder.parameters(), lr=0.005)
 criterion = nn.MSELoss()
 
 
-# 원본 이미지를 시각화 하기 (첫번째 열)
-view_data, _ = trainset.get_sample(5)
-view_data = view_data.view(-1, image_size[0]*image_size[1]*image_size[2])
-view_data = view_data.type(torch.FloatTensor)/255.
 
+resnet18 = models.resnet18(pretrained=True)  # in (18, 34, 50, 101, 152)
+resnet18 = resnet18.to(DEVICE)
 
 def train(autoencoder, train_loader):
     autoencoder.train()
     idx = 0
     # try:
     for x, label in tqdm(train_loader):
-        x = x.view(-1, image_size[0]*image_size[1]*image_size[2]).to(DEVICE)
-        x = x.type(torch.FloatTensor) / 255.
+        seed_arr = np.array(x) / 255.0
+        x = seed_arr.transpose((0, 3, 1, 2))
+        x = torch.FloatTensor(x).to(DEVICE)
+        feature_x = resnet18(x)
+        x = feature_x.view(-1, 1000).to(DEVICE)
+        y = feature_x.view(-1, 1000).to(DEVICE)
 
-        y = x.view(-1, image_size[0]*image_size[1]*image_size[2]).to(DEVICE)
-        y = y.type(torch.FloatTensor) / 255.
         encoded, decoded = autoencoder(x)
 
         loss = criterion(decoded, y)
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
-        if idx % 100 == 0:
-            print('loss',loss.item())
+
+        print('loss',loss.item())
         idx += 1
     # except Exception as e:
     #     # print(e)
@@ -142,33 +149,19 @@ def train(autoencoder, train_loader):
 for epoch in range(1, EPOCH+1):
     train(autoencoder, train_loader)
 
-    # 디코더에서 나온 이미지를 시각화 하기 (두번째 열)
-    test_x = view_data.to(DEVICE)
-    _, decoded_data = autoencoder(test_x)
-
-    # 원본과 디코딩 결과 비교해보기
-    f, a = plt.subplots(2, 5, figsize=(5, 2))
-    print("[Epoch {}]".format(epoch))
-    for i in range(5):
-        img = np.reshape(np.array(view_data[i]),(image_size[0], image_size[1],image_size[2]))
-        a[0][i].imshow(img)
-        a[0][i].set_xticks(()); a[0][i].set_yticks(())
-
-    for i in range(5):
-        img = np.reshape(decoded_data.to("cpu").data.numpy()[i], (image_size[0], image_size[1],image_size[2]))
-        a[1][i].imshow(img)
-        a[1][i].set_xticks(()); a[1][i].set_yticks(())
-    plt.show()
-
 
 # # 잠재변수 들여다보기
 
 # 잠재변수를 3D 플롯으로 시각화
-view_data, labels = trainset.get_sample(200)
-view_data = view_data.view(-1, image_size[0] * image_size[1] *image_size[2])
-view_data = view_data.type(torch.FloatTensor)/255.
+seed_im, labels = trainset.get_sample(300)
+seed_arr = np.array(seed_im) / 255.0
+seed_arr = seed_arr.transpose((0, 3, 1, 2))
+seed_arr = torch.FloatTensor(seed_arr).to(DEVICE)
+view_data_x = resnet18(seed_arr)
+view_data_x = view_data_x.view(-1, 1000).to(DEVICE)
+
 labels = labels.numpy()
-test_x = view_data.to(DEVICE)
+test_x = view_data_x.to(DEVICE)
 encoded_data, _ = autoencoder(test_x)
 encoded_data = encoded_data.to("cpu")
 
@@ -194,6 +187,7 @@ if dimension == 2:
 
     for x, y, s in zip(X, Y, labels):
         name = CLASSES[s]
+        print(name)
         color = cm.rainbow(int(255*s/9))
         ax.text(x, y, name, backgroundcolor=color)
 
