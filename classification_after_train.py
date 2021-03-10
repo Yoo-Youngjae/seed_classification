@@ -85,6 +85,7 @@ if __name__ == '__main__':
     r_im = Image.open(file_name)
     r_im = compose(r_im)
     data = np.array(r_im)
+    data = np.expand_dims(data, axis=0)
     data = data.transpose((0, 3, 1, 2))
     data = torch.FloatTensor(data).to(DEVICE)
 
@@ -94,7 +95,7 @@ if __name__ == '__main__':
 
     output = model(data)
     pred = output.max(1, keepdim=True)[1]
-    print('prediction label is',pred)
+    print('prediction label is', pred.item())
 
 
 
