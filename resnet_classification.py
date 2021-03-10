@@ -22,9 +22,9 @@ csv_file_name = 'data/dataset.csv'
 
 # ## 하이퍼파라미터
 
-EPOCHS = 40
+EPOCHS = 60
 BATCH_SIZE = 32
-image_size = (224, 224, 3)
+image_size = (448, 448, 3) # 224, 224
 
 
 class SeedDataset(Dataset):
@@ -32,7 +32,7 @@ class SeedDataset(Dataset):
         super(SeedDataset, self).__init__()
         self.dataframe = dataframe
         self.root = root
-        self.compose = transforms.Compose([transforms.Resize((224, 224))])
+        self.compose = transforms.Compose([transforms.Resize((448, 448))])
 
     def __len__(self):
         return len(self.dataframe)
@@ -126,7 +126,7 @@ class ResNet(nn.Module):
         self.layer1 = self._make_layer(16, 2, stride=1)
         self.layer2 = self._make_layer(32, 2, stride=2)
         self.layer3 = self._make_layer(64, 2, stride=2)
-        self.linear = nn.Linear(3136, num_classes) # 64
+        self.linear = nn.Linear(12544, num_classes) # 64
 
     def _make_layer(self, planes, num_blocks, stride):
         strides = [stride] + [1] * (num_blocks - 1)
@@ -163,7 +163,7 @@ def train(model, train_loader, optimizer, epoch):
     model.train()
     idx = 0
     for data, target in tqdm(train_loader):
-        data = np.array(data) / 255.0
+        data = np.array(data)
         data = data.transpose((0, 3, 1, 2))
         data = torch.FloatTensor(data).to(DEVICE)
         target = target - 1
@@ -174,8 +174,9 @@ def train(model, train_loader, optimizer, epoch):
         loss = F.cross_entropy(output, target)
         loss.backward()
         optimizer.step()
-        if idx %10 == 0:
+        if idx % 10 == 0:
             print('loss',loss.item())
+        idx += 1
 
 # ## 테스트하기
 
@@ -185,7 +186,7 @@ def evaluate(model, test_loader):
     correct = 0
     with torch.no_grad():
         for data, target in tqdm(test_loader):
-            data = np.array(data) / 255.0
+            data = np.array(data)
             data = data.transpose((0, 3, 1, 2))
             data = torch.FloatTensor(data).to(DEVICE)
             target = target - 1
@@ -208,7 +209,7 @@ def evaluate(model, test_loader):
 
 # ## 코드 돌려보기
 # 자, 이제 모든 준비가 끝났습니다. 코드를 돌려서 실제로 훈련이 되는지 확인해봅시다!
-
+best_accuracy = 0
 for epoch in range(1, EPOCHS + 1):
     scheduler.step()
     train(model, train_loader, optimizer, epoch)
@@ -216,6 +217,9 @@ for epoch in range(1, EPOCHS + 1):
 
     print('[{}] Test Loss: {:.4f}, Accuracy: {:.2f}%'.format(
         epoch, test_loss, test_accuracy))
+    if best_accuracy < test_accuracy:
+        torch.save(model.state_dict(), 'save/resnet_classification.pt')
+        best_accuracy = test_accuracy
 
 
 
