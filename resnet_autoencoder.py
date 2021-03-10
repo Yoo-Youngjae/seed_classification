@@ -35,16 +35,16 @@ CLASSES = {
 # 하이퍼파라미터
 EPOCH = 20
 BATCH_SIZE = 64
-dimension = 3
-image_size = (224, 224, 3)
+dimension = 2
 feature_size = 1000
 
 USE_CUDA = torch.cuda.is_available()
 DEVICE = torch.device("cuda" if USE_CUDA else "cpu")
-DEVICE = 1
+# DEVICE = 1
 print("Using Device:", DEVICE)
 # csv_file_name = 'data/example.csv'
 csv_file_name = 'data/dataset.csv'
+test_file_name = 'data/test_set.csv'
 
 resnet18 = models.resnet18(pretrained=True)  # in (18, 34, 50, 101, 152)
 resnet18 = resnet18.to(DEVICE)
@@ -54,7 +54,7 @@ class SeedDataset(Dataset):
         super(SeedDataset, self).__init__()
         self.dataframe = dataframe
         self.root = root
-        self.compose = transforms.Compose([transforms.Resize((224, 224))])
+        self.compose = transforms.Compose([transforms.Resize((448, 448))])
 
     def __len__(self):
         return len(self.dataframe)
@@ -88,7 +88,6 @@ class SeedDataset(Dataset):
 class Autoencoder(nn.Module):
     def __init__(self):
         super(Autoencoder, self).__init__()
-        global dimension
 
         self.encoder = nn.Sequential(
             nn.Linear(feature_size, 512),
@@ -97,10 +96,10 @@ class Autoencoder(nn.Module):
             nn.ReLU(),
             nn.Linear(256, 128),
             nn.ReLU(),
-            nn.Linear(128, 64),   # 입력의 특징을 3차원으로 압축합니다
+            nn.Linear(128, 100),   # 입력의 특징을 3차원으로 압축합니다
         )
         self.decoder = nn.Sequential(
-            nn.Linear(64, 128),
+            nn.Linear(100, 128),
             nn.ReLU(),
             nn.Linear(128, 256),
             nn.ReLU(),
@@ -161,7 +160,7 @@ def evaluate(autoencoder, train_loader, epoch):
         labels += label.tolist()
     encoded_data = base_data
 
-    colormap = ['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'purple', 'slategrey', 'pink', 'saddlebrown']
+    colormap = ['red', 'orange', '#0077BB', 'green', 'blue', 'indigo', 'purple', '#EE3377', 'pink', 'saddlebrown']
     if dimension == 2:
         fig = plt.figure(figsize=(10, 8))
         ax = fig.add_subplot()
@@ -180,7 +179,7 @@ def evaluate(autoencoder, train_loader, epoch):
 
         ax.set_xlim(X.min(), X.max())
         ax.set_ylim(Y.min(), Y.max())
-        plt.legend(labels=[CLASSES[i] for i in range(1, 9)])
+        plt.legend()
         plt.savefig('save/image/2d_' + str(epoch) + '.png', dpi=300)
         plt.show()
     else:  # dimension == 3
@@ -203,6 +202,7 @@ def evaluate(autoencoder, train_loader, epoch):
         ax.set_xlim(X.min(), X.max())
         ax.set_ylim(Y.min(), Y.max())
         ax.set_zlim(Z.min(), Z.max())
+        plt.legend()
         plt.savefig('save/image/3d_'+str(epoch)+'.png', dpi=300)
         plt.show()
 
@@ -211,15 +211,24 @@ def evaluate(autoencoder, train_loader, epoch):
 trainset = pd.read_csv(csv_file_name)
 trainset = SeedDataset(trainset, root='data/img/')
 
+testset = pd.read_csv(test_file_name)
+testset = SeedDataset(testset, root='data/img/')
+
 train_loader = DataLoader(
     trainset,
     batch_size  = BATCH_SIZE,
     shuffle     = True,
     num_workers = 5
 )
+test_loader = DataLoader(
+    testset,
+    batch_size  = 40,
+    shuffle     = True,
+    num_workers = 5
+)
 
 autoencoder = Autoencoder().to(DEVICE)
-optimizer = torch.optim.Adam(autoencoder.parameters(), lr=0.005)
+optimizer = torch.optim.Adam(autoencoder.parameters(), lr=0.0005)
 criterion = nn.MSELoss()
 
 
@@ -227,8 +236,8 @@ criterion = nn.MSELoss()
 #########################
 
 for epoch in range(1, EPOCH+1):
-    train(autoencoder, train_loader)
-    evaluate(autoencoder, train_loader, epoch)
+    train(autoencoder, test_loader)
+    evaluate(autoencoder, test_loader, epoch)
 
 
 
