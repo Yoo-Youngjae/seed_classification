@@ -33,7 +33,7 @@ CLASSES = {
 
 
 # 하이퍼파라미터
-EPOCH = 1
+EPOCH = 20
 BATCH_SIZE = 64
 dimension = 3
 image_size = (224, 224, 3)
@@ -41,6 +41,7 @@ feature_size = 1000
 
 USE_CUDA = torch.cuda.is_available()
 DEVICE = torch.device("cuda" if USE_CUDA else "cpu")
+DEVICE = 1
 print("Using Device:", DEVICE)
 # csv_file_name = 'data/example.csv'
 csv_file_name = 'data/dataset.csv'
@@ -160,20 +161,26 @@ def evaluate(autoencoder, train_loader, epoch):
         labels += label.tolist()
     encoded_data = base_data
 
+    colormap = ['red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'purple', 'slategrey', 'pink', 'saddlebrown']
     if dimension == 2:
         fig = plt.figure(figsize=(10, 8))
         ax = fig.add_subplot()
         X = encoded_data[:, 0]
         Y = encoded_data[:, 1]
+        names = []
 
         for x, y, s in zip(X, Y, labels):
             name = CLASSES[s]
-            print(name)
-            color = cm.rainbow(int(255 * s / 9))
-            ax.text(x, y, name, backgroundcolor=color)
+            color = colormap[s % 10]
+            if name not in names:
+                ax.scatter(x, y, label=name, c=color)
+                names.append(name)
+            else:
+                ax.scatter(x, y, c=color)
 
         ax.set_xlim(X.min(), X.max())
         ax.set_ylim(Y.min(), Y.max())
+        plt.legend(labels=[CLASSES[i] for i in range(1, 9)])
         plt.savefig('save/image/2d_' + str(epoch) + '.png', dpi=300)
         plt.show()
     else:  # dimension == 3
@@ -182,11 +189,16 @@ def evaluate(autoencoder, train_loader, epoch):
         X = encoded_data[:, 0]
         Y = encoded_data[:, 1]
         Z = encoded_data[:, 2]
+        names = []
 
         for x, y, z, s in zip(X, Y, Z, labels):
             name = CLASSES[s]
-            color = cm.rainbow(int(255 * s / 9))
-            ax.text(x, y, z, name, backgroundcolor=color)
+            color = colormap[s % 10]
+            if name not in names:
+                ax.scatter(x, y, z, c=color, label=name)
+                names.append(name)
+            else:
+                ax.scatter(x, y, c=color)
 
         ax.set_xlim(X.min(), X.max())
         ax.set_ylim(Y.min(), Y.max())
@@ -203,7 +215,7 @@ train_loader = DataLoader(
     trainset,
     batch_size  = BATCH_SIZE,
     shuffle     = True,
-    num_workers = 3
+    num_workers = 5
 )
 
 autoencoder = Autoencoder().to(DEVICE)
