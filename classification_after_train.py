@@ -95,7 +95,7 @@ if __name__ == '__main__':
 
     output = model(data)
     pred = output.max(1, keepdim=True)[1]
-    print('prediction label is', pred.item())
+    print('prediction label is', pred.item()+1)
 
 
 

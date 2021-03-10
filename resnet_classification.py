@@ -18,7 +18,7 @@ from tqdm import tqdm
 
 USE_CUDA = torch.cuda.is_available()
 DEVICE = torch.device("cuda" if USE_CUDA else "cpu")
-csv_file_name = 'data/dataset.csv'
+csv_file_name = 'data/dataset_remake.csv'
 
 # ## 하이퍼파라미터
 
