@@ -4,11 +4,11 @@
 # # 오토인코더로 이미지의 특징을 추출하기
 
 import torch
-from torch import nn, optim
+from torch import nn
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from matplotlib import cm
+
 import numpy as np
 import pandas as pd
 
@@ -17,6 +17,7 @@ from torchvision import models, transforms
 from PIL import Image
 from tqdm import tqdm
 from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA, TruncatedSVD
 
 
 CLASSES = {
@@ -142,7 +143,8 @@ def evaluate(autoencoder, train_loader, epoch):
     first = True
     base_data = None
     labels = []
-    tsne = TSNE(n_components=dimension)
+    # tsne = TSNE(n_components=dimension)
+    svd = TruncatedSVD(n_components=dimension)
     for x, label in tqdm(train_loader):
         x = np.array(x)
         x = x.transpose((0, 3, 1, 2))
@@ -151,7 +153,7 @@ def evaluate(autoencoder, train_loader, epoch):
         test_x = feature_x.view(-1, 1000).to(DEVICE)
         encoded_data, _ = autoencoder(test_x)
         encoded_data = encoded_data.to("cpu").detach().numpy()
-        encoded_data = tsne.fit_transform(encoded_data)
+        encoded_data = svd.fit_transform(encoded_data)
         if first:
             first = False
             base_data = encoded_data

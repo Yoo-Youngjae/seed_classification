@@ -1,18 +1,34 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# # 신경망 깊게 쌓아 컬러 데이터셋에 적용하기
-# Convolutional Neural Network (CNN) 을 쌓아올려 딥한 러닝을 해봅시다.
-
 import torch
 import torch.nn as nn
 
 import torch.nn.functional as F
 from torchvision import transforms
+from torch.utils.data import Dataset, DataLoader
 
 from PIL import Image
 import numpy as np
+import pandas as pd
+from sklearn.manifold import TSNE
+from sklearn.decomposition import PCA, TruncatedSVD
+from tqdm import tqdm
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
+
+CLASSES = {
+    1: 'Species-1',
+    2: 'Species-2',
+    3: 'Species-3',
+    4: 'Species-4',
+    5: 'Species-5',
+    6: 'Species-6',
+    7: 'Species-7',
+    8: 'Species-8',
+    9: 'Species-9'
+}
 
 # ## ResNet 모델 만들기
 
@@ -40,7 +56,6 @@ class BasicBlock(nn.Module):
         out += self.shortcut(x)
         out = F.relu(out)
         return out
-
 
 class ResNet(nn.Module):
     def __init__(self, num_classes=8):
@@ -75,6 +90,98 @@ class ResNet(nn.Module):
 
 
 
+class SeedDataset(Dataset):
+    def __init__(self, dataframe, root='data/img'):
+        super(SeedDataset, self).__init__()
+        self.dataframe = dataframe
+        self.root = root
+        self.compose = transforms.Compose([transforms.Resize((448, 448))])
+
+    def __len__(self):
+        return len(self.dataframe)
+
+    def __getitem__(self, i):
+        file_name, label = self.dataframe.loc[i]['name'], self.dataframe.loc[i]['label']
+        img_dir = self.root + file_name +'.JPG'
+        r_im = Image.open(img_dir)
+        r_im = self.compose(r_im)
+        r_im = np.array(r_im)
+        data = torch.FloatTensor(r_im)
+        return data, label
+
+def draw_clustering(model, test_loader):
+    model.eval()
+    dimension = 2
+    tsne = TSNE(n_components=dimension)
+    # pca = PCA(n_components=dimension)
+    # svd = TruncatedSVD(n_components=dimension)
+    first = True
+    base_data = None
+    labels = []
+
+    for x, label in tqdm(test_loader):
+        x = np.array(x) / 255.0
+        x = x.transpose((0, 3, 1, 2))
+        test_x = torch.FloatTensor(x).to(DEVICE)
+        encoded_data = model(test_x)
+        encoded_data = encoded_data.to("cpu").detach().numpy()
+        encoded_data = tsne.fit_transform(encoded_data)
+        if first:
+            first = False
+            base_data = encoded_data
+        else:
+            base_data = np.concatenate((base_data, encoded_data), axis=0)
+        labels += label.tolist()
+    encoded_data = base_data
+    colormap = ['red', 'orange', '#0077BB', 'green', 'blue', 'indigo', 'purple', '#EE3377', 'pink', 'saddlebrown']
+    if dimension == 2:
+        fig = plt.figure(figsize=(10, 8))
+        ax = fig.add_subplot()
+        X = encoded_data[:, 0]
+        Y = encoded_data[:, 1]
+        names = []
+
+        for x, y, s in zip(X, Y, labels):
+            name = CLASSES[s]
+            color = colormap[s % 10]
+            if name not in names:
+                ax.scatter(x, y, label=name, c=color)
+                names.append(name)
+            else:
+                ax.scatter(x, y, c=color)
+
+        ax.set_xlim(X.min(), X.max())
+        ax.set_ylim(Y.min(), Y.max())
+        plt.legend()
+        plt.savefig('save/classification_img/2d.png', dpi=300)
+        plt.show()
+    else:  # dimension == 3
+        fig = plt.figure(figsize=(10, 8))
+        ax = Axes3D(fig)
+        X = encoded_data[:, 0]
+        Y = encoded_data[:, 1]
+        Z = encoded_data[:, 2]
+        names = []
+
+        for x, y, z, s in zip(X, Y, Z, labels):
+            name = CLASSES[s]
+            color = colormap[s]
+            if name not in names:
+                ax.scatter(x, y, z, c=color, label=name)
+                names.append(name)
+            else:
+                ax.scatter(x, y, c=color)
+
+        ax.set_xlim(X.min(), X.max())
+        ax.set_ylim(Y.min(), Y.max())
+        ax.set_zlim(Z.min(), Z.max())
+        plt.legend()
+        plt.savefig('save/classification_img/3d.png', dpi=300)
+        plt.show()
+
+
+
+
 if __name__ == '__main__':
     # ## load camera data
     USE_CUDA = torch.cuda.is_available()
@@ -94,8 +201,25 @@ if __name__ == '__main__':
     model.load_state_dict(torch.load('save/resnet_classification.pt'))
 
     output = model(data)
+    print(output)
     pred = output.max(1, keepdim=True)[1]
     print('prediction label is', pred.item()+1)
+
+
+    # # to visualize test_set.csv
+    # test_file_name = 'data/test_set.csv'
+    # testset = pd.read_csv(test_file_name)
+    # testset = SeedDataset(testset, root='data/img/')
+    #
+    # test_loader = DataLoader(
+    #     testset,
+    #     batch_size=8,
+    #     shuffle=True,
+    #     num_workers=4
+    # )
+    # draw_clustering(model, test_loader)
+
+
 
 
 
