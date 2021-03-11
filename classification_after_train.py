@@ -81,7 +81,7 @@ if __name__ == '__main__':
     DEVICE = torch.device("cuda" if USE_CUDA else "cpu")
     compose = transforms.Compose([transforms.Resize((448, 448))])
 
-    file_name = 'data/img/1-1a.JPG'
+    file_name = 'data/img/26-1b.JPG'
     r_im = Image.open(file_name)
     r_im = compose(r_im)
     data = np.array(r_im)

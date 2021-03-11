@@ -150,8 +150,7 @@ class ResNet(nn.Module):
 # ## 준비
 
 model = ResNet().to(DEVICE)
-optimizer = optim.SGD(model.parameters(), lr=0.1,
-                      momentum=0.9, weight_decay=0.0005)
+optimizer = optim.Adam(model.parameters(), lr=0.0001, weight_decay=0.0005)
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)
 
 print(model)
@@ -163,7 +162,7 @@ def train(model, train_loader, optimizer, epoch):
     model.train()
     idx = 0
     for data, target in tqdm(train_loader):
-        data = np.array(data)
+        data = np.array(data) / 255.0
         data = data.transpose((0, 3, 1, 2))
         data = torch.FloatTensor(data).to(DEVICE)
         target = target - 1
@@ -186,7 +185,7 @@ def evaluate(model, test_loader):
     correct = 0
     with torch.no_grad():
         for data, target in tqdm(test_loader):
-            data = np.array(data)
+            data = np.array(data) / 255.0
             data = data.transpose((0, 3, 1, 2))
             data = torch.FloatTensor(data).to(DEVICE)
             target = target - 1
