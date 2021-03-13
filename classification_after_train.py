@@ -16,6 +16,9 @@ from sklearn.decomposition import PCA, TruncatedSVD
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from lime.lime_image import LimeImageExplainer
+from skimage.segmentation import mark_boundaries
+import cv2 as cv
 
 
 CLASSES = {
@@ -29,6 +32,7 @@ CLASSES = {
     8: 'Species-8',
     9: 'Species-9'
 }
+
 
 # ## ResNet 모델 만들기
 
@@ -179,26 +183,34 @@ def draw_clustering(model, test_loader):
         plt.savefig('save/classification_img/3d.png', dpi=300)
         plt.show()
 
+# ## load camera data
+USE_CUDA = torch.cuda.is_available()
+DEVICE = torch.device("cuda" if USE_CUDA else "cpu")
 
+# load model
+model = ResNet().to(DEVICE)
+model.load_state_dict(torch.load('save/resnet_classification.pt'))
 
+def predict_fn(test_xs):
+    # data = np.expand_dims(test_xs, axis=0)
+    data = test_xs.transpose((0, 3, 1, 2))
+    data = torch.FloatTensor(data).to(DEVICE)
+    output = model(data)
+    return output
 
 if __name__ == '__main__':
-    # ## load camera data
-    USE_CUDA = torch.cuda.is_available()
-    DEVICE = torch.device("cuda" if USE_CUDA else "cpu")
+
     compose = transforms.Compose([transforms.Resize((448, 448))])
 
-    file_name = 'data/img/26-1b.JPG'
+    file_name = 'data/img/26-4b.JPG'
     r_im = Image.open(file_name)
     r_im = compose(r_im)
-    data = np.array(r_im)
-    data = np.expand_dims(data, axis=0)
+    data_arr = np.array(r_im)
+    data = np.expand_dims(data_arr, axis=0)
     data = data.transpose((0, 3, 1, 2))
     data = torch.FloatTensor(data).to(DEVICE)
 
-    # load model
-    model = ResNet().to(DEVICE)
-    model.load_state_dict(torch.load('save/resnet_classification.pt'))
+
 
     output = model(data)
     print(output)
@@ -218,7 +230,14 @@ if __name__ == '__main__':
     #     num_workers=4
     # )
     # draw_clustering(model, test_loader)
+    explainer = LimeImageExplainer()
+    explanation = explainer.explain_instance(data_arr, predict_fn, hide_color=0, top_labels=2, num_samples=1000)
 
+    temp, mask = explanation.get_image_and_mask(0, positive_only=False, num_features=2, hide_rest=False)
+    cv.imwrite('limeTest.jpg', mark_boundaries(temp / 2 + 0.5, mask).astype('uint8'))
+
+    plt.imshow(mark_boundaries(temp / 2 + 0.5, mask).astype('uint8'))
+    plt.show()
 
 
 
